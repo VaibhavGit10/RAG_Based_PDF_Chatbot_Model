@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>PDF Q&A Chat with Voice Assistant</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+    .card { border: 1px solid #ccc; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05);}
+    #chat { height: 400px; overflow-y: auto; padding: 10px; border: 1px solid #ccc; border-radius: 8px; background: #fafafa; }
+    .msg { margin: 8px 0; padding: 10px 14px; border-radius: 12px; max-width: 70%; line-height: 1.4; }
+    .msg.user { background: #007bff; color: white; margin-left: auto; text-align: right; }
+    .msg.bot { background: #e0e0e0; color: #333; text-align: left; }
+    button { cursor: pointer; padding: 8px 12px; border: none; border-radius: 6px; }
+    button#askBtn { background: green; color: white; }
+    button#micBtn { background: #555; color: white; }
+    input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+  </style>
+</head>
+
+<body>
+  <h1>📄 PDF Q&A Chatbot with Voice</h1>
+
+  <!-- Upload Section -->
+  <div class="card">
+    <form id="uploadForm">
+      <label><b>Upload PDF:</b></label>
+      <input type="file" id="pdfFile" accept="application/pdf" required />
+      <button type="submit">Process</button>
+      <span id="uploadStatus"></span>
+    </form>
+  </div>
+
+  <!-- Chat Section -->
+  <div class="card">
+    <div id="chat"></div>
+    <div style="display: flex; gap: 10px; margin-top: 10px;">
+      <input id="question" placeholder="Ask a question about the PDF..." style="flex: 1;"/>
+      <button id="askBtn">Ask</button>
+      <button id="micBtn">🎤</button>
+    </div>
+  </div>
+
+  <script>
+    const uploadForm = document.getElementById("uploadForm");
+    const pdfFile = document.getElementById("pdfFile");
+    const uploadStatus = document.getElementById("uploadStatus");
+    const chat = document.getElementById("chat");
+    const askBtn = document.getElementById("askBtn");
+    const micBtn = document.getElementById("micBtn");
+    const questionInput = document.getElementById("question");
+
+    // Scroll to bottom
+    function scrollChat() {
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Add message to chat
+    function addMessage(text, sender) {
+      const div = document.createElement("div");
+      div.className = `msg ${sender}`;
+      div.textContent = text;
+      chat.appendChild(div);
+      scrollChat();
+
+      // If bot message, speak it out
+      if (sender === "bot") {
+        speakText(text);
+      }
+    }
+
+    // Upload PDF
+    uploadForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const file = pdfFile.files[0];
+      if (!file) return alert("Please select a file!");
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      uploadStatus.innerText = "📄 Processing PDF, please wait...";
+      const response = await fetch("/upload", { method: "POST", body: formData });
+      const result = await response.json();
+      uploadStatus.innerText = result.message || "Done!";
+      addMessage("PDF processed successfully! You can now ask questions.", "bot");
+    });
+
+    // Ask a question
+    askBtn.addEventListener("click", askQuestion);
+    questionInput.addEventListener("keyup", (e) => {
+      if (e.key === "Enter") askQuestion();
+    });
+
+    async function askQuestion() {
+      const question = questionInput.value.trim();
+      if (!question) return;
+
+      addMessage(question, "user");
+      questionInput.value = "";
+
+      const response = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+
+      const result = await response.json();
+      if (result.status === "success") {
+        addMessage(result.answer, "bot");
+      } else {
+        addMessage("Error: " + result.message, "bot");
+      }
+    }
+
+    // Voice Recognition (Speech-to-Text)
+    let recognition;
+    if ('webkitSpeechRecognition' in window) {
+      recognition = new webkitSpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      recognition.onresult = (event) => {
+        const speechText = event.results[0][0].transcript;
+        questionInput.value = speechText;
+        askQuestion();
+      };
+
+      recognition.onerror = (event) => {
+        addMessage("Voice Error: " + event.error, "bot");
+      };
+    } else {
+      micBtn.disabled = true;
+      micBtn.innerText = "Not Supported";
+    }
+
+    micBtn.addEventListener("click", () => {
+      recognition.start();
+      addMessage("🎤 Listening...", "bot");
+    });
+
+    // Text-to-Speech (Bot Replies)
+    function speakText(message) {
+      if ("speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(message);
+        utterance.rate = 1;
+        speechSynthesis.speak(utterance);
+      }
+    }
+  </script>
+</body>
+</html>
+
